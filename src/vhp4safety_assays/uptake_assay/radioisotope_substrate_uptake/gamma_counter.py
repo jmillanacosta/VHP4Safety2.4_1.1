@@ -101,23 +101,53 @@ def get_substrate_cpms(raw_df, substrate_names, original_vol, new_vol):
     return pd.DataFrame(cpms).transpose()
 
 
-def get_subs_edcs_cell_cpms(
-    raw_df, substrate, original_vol, new_vol, cell_type, edcs_df, bg
+def get_subs_edcs_cell_cpms(  #TODO figure out role of DMSO as bg
+    raw_df, substrate_name, original_vol, new_vol, cell_type, edcs_df, substrate_df
 ):
     """
     Calculate corrected CPMs for a specific substrate, cell type, and EDC combinations.
 
     :param raw_df: pd.DataFrame: Input DataFrame.
-    :param substrate: str: Substrate to analyze.
+    :param substrate_name: str: Substrate to analyze.
     :param original_vol: float: Original volume of the assay in microliters.
     :param new_vol: float: New volume for scaling CPMs.
     :param cell_type: str: Cell type to analyze.
     :param edcs_df: pd.DataFrame: EDCs response DataFrame.
-    :param bg: pd.DataFrame: Background response DataFrame.
+    :param substrate_df: pd.DataFrame: Substrate background response DataFrame.
     :return: pd.DataFrame: A DataFrame with corrected CPMs.
     """
-    # Add your implementation here
-    pass
+    df = edcs_df[[f"cpm_{new_vol}"]].copy()
+    df.columns = ["tracermix"]
+    filtered_raw_df = raw_df[
+        (raw_df["substrate"] == substrate_name) & (raw_df["cell_type"] == cell_type)
+    ]
+
+    df = df.join(
+        get_edcs_cpms(
+            raw_df,
+            substrate_name,
+            cell_type,
+            original_vol,
+            new_vol,
+        ),
+        lsuffix="_left",
+        rsuffix="_right",
+    )
+    df = df.replace("", None).astype(float)
+    df["cpm_1_corrected"] = df["cpm1"] / df["tracermix"]
+    df["cpm_2_corrected"] = df["cpm2"] / df["tracermix"]
+    df["average_cpm_corrected"] = df[["cpm_1_corrected", "cpm_2_corrected"]].mean(
+        axis=1
+    )
+    df["uptake 1 tov DMSO"] = (
+        df["cpm_1_corrected"] / df.loc["DMSO 0.5%", "average_cpm_corrected"]
+    )
+    df["uptake 2 tov DMSO"] = (
+        df["cpm_2_corrected"] / df.loc["DMSO 1%", "average_cpm_corrected"]
+    )
+    df["avg uptake"] = df[["uptake 1 tov DMSO", "uptake 2 tov DMSO"]].mean(axis=1)
+    df["std uptake"] = df[["uptake 1 tov DMSO", "uptake 2 tov DMSO"]].std(axis=1)
+    return df
 
 
 def run_all_combinations(raw_df, metadata, original_vol, new_vol, edcs_dfs, bg):
